@@ -1,0 +1,8 @@
+customtkinter
+yfinance
+matplotlib
+statsmodels
+pyinstaller
+pandas
+numpy
+scipy # statsmodels depende de scipy, bom explicitar
