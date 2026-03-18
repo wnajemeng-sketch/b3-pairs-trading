@@ -1,6 +1,8 @@
-# Algoritmo de Pairs Trading: WINFUT vs DIFUT (B3)
+# Algoritmo de Pairs Trading: B3 (WINFUT, WDOFUT e DIFUT)
 
-Este repositório contém um algoritmo completo para análise de correlação, cointegração e backtesting de uma estratégia de **Pairs Trading** entre o Mini Contrato Futuro de Ibovespa (**WINFUT**) e o Contrato Futuro de Taxa DI (**DIFUT**) da B3.
+Este repositório contém um algoritmo completo para análise de correlação, cointegração e backtesting de estratégias de **Pairs Trading** na B3, focando nos pares:
+1. **WINFUT vs DIFUT** (Ibovespa vs Taxa DI)
+2. **WDOFUT vs DIFUT** (Dólar vs Taxa DI)
 
 ## 📊 Visão Geral
 
@@ -10,9 +12,11 @@ Neste projeto, analisamos a relação entre o mercado de ações (WINFUT) e as t
 
 ## 🛠️ Estrutura do Projeto
 
-- `data_collector.py`: Script para coleta de dados históricos usando `yfinance` (WINFUT proxy) e `pyield` (DIFUT/DI1).
-- `pairs_trading_analysis.py`: Realiza testes estatísticos de Correlação de Pearson e Cointegração (Engle-Granger), além de calcular o Spread e Z-Score.
-- `backtest.py`: Simula a estratégia baseada em desvios de Z-Score (+2/-2) e calcula retornos acumulados.
+- `data_collector.py`: Script para coleta de dados históricos usando `yfinance` (WINFUT e WDOFUT proxies) e `pyield` (DIFUT/DI1).
+- `pairs_trading_analysis.py`: Análise estatística para o par WINFUT vs DIFUT.
+- `pairs_trading_wdo_di.py`: Análise estatística para o par WDOFUT vs DIFUT.
+- `backtest.py`: Backtesting para o par WINFUT vs DIFUT.
+- `backtest_wdo_di.py`: Backtesting para o par WDOFUT vs DIFUT.
 - `historical_data.csv`: Dados brutos coletados.
 - `analyzed_data.csv`: Dados com cálculos de Spread e Z-Score.
 - `backtest_results.png`: Gráfico de desempenho da estratégia.
