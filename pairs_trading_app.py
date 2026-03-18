@@ -4,7 +4,6 @@ from tkinter import messagebox, filedialog
 import pandas as pd
 import numpy as np
 import yfinance as yf
-import pyield as yd
 from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -25,7 +24,7 @@ class PairsTradingApp(ctk.CTk):
         # Variables
         self.ticker1 = ctk.StringVar(value="^BVSP")
         self.ticker2 = ctk.StringVar(value="USDBRL=X")
-        self.days_back = ctk.StringVar(value="60")
+        self.days_back = ctk.StringVar(value="180") # Aumentado para 180 dias como padrão
         self.results = {}
         self.df_data = None
         
@@ -41,10 +40,10 @@ class PairsTradingApp(ctk.CTk):
         input_frame = ctk.CTkFrame(main_frame)
         input_frame.pack(fill="x", pady=10)
         
-        ctk.CTkLabel(input_frame, text="Ativo 1 (Ticker):", font=("Arial", 12)).pack(side="left", padx=5)
+        ctk.CTkLabel(input_frame, text="Ativo 1 (Ticker YF):", font=("Arial", 12)).pack(side="left", padx=5)
         ctk.CTkEntry(input_frame, textvariable=self.ticker1, width=150).pack(side="left", padx=5)
         
-        ctk.CTkLabel(input_frame, text="Ativo 2 (Ticker):", font=("Arial", 12)).pack(side="left", padx=5)
+        ctk.CTkLabel(input_frame, text="Ativo 2 (Ticker YF):", font=("Arial", 12)).pack(side="left", padx=5)
         ctk.CTkEntry(input_frame, textvariable=self.ticker2, width=150).pack(side="left", padx=5)
         
         ctk.CTkLabel(input_frame, text="Dias para trás:", font=("Arial", 12)).pack(side="left", padx=5)
@@ -117,6 +116,10 @@ class PairsTradingApp(ctk.CTk):
             df1 = yf.download(ticker1, start=start.strftime("%Y-%m-%d"), end=end.strftime("%Y-%m-%d"), progress=False)
             df2 = yf.download(ticker2, start=start.strftime("%Y-%m-%d"), end=end.strftime("%Y-%m-%d"), progress=False)
             
+            if df1.empty or df2.empty:
+                messagebox.showerror("Erro", "Não foi possível obter dados para um ou ambos os tickers. Verifique os tickers e o período.")
+                return
+
             if isinstance(df1.columns, pd.MultiIndex):
                 df1.columns = df1.columns.get_level_values(0)
             if isinstance(df2.columns, pd.MultiIndex):
@@ -129,7 +132,7 @@ class PairsTradingApp(ctk.CTk):
             df_combined.columns = [ticker1, ticker2]
             
             if df_combined.empty:
-                messagebox.showerror("Erro", "Nenhum dado encontrado para os tickers especificados.")
+                messagebox.showerror("Erro", "Nenhum dado combinado encontrado para os tickers especificados. Verifique se há datas em comum.")
                 return
             
             self.df_data = df_combined
@@ -138,7 +141,11 @@ class PairsTradingApp(ctk.CTk):
             correlation = df_combined[ticker1].corr(df_combined[ticker2])
             
             # Cointegration test
-            score, p_value, _ = coint(df_combined[ticker1], df_combined[ticker2])
+            # Cointegration test requires non-constant series
+            if df_combined[ticker1].nunique() < 2 or df_combined[ticker2].nunique() < 2:
+                p_value = 1.0 # Cannot perform cointegration test on constant series
+            else:
+                score, p_value, _ = coint(df_combined[ticker1], df_combined[ticker2])
             
             # Hedge ratio
             Y = df_combined[ticker1]
@@ -152,13 +159,23 @@ class PairsTradingApp(ctk.CTk):
             df_combined["Spread"] = df_combined[ticker1] - (beta * df_combined[ticker2] + intercept)
             spread_mean = df_combined["Spread"].mean()
             spread_std = df_combined["Spread"].std()
-            df_combined["Z-Score"] = (df_combined["Spread"] - spread_mean) / spread_std
+            
+            if spread_std == 0:
+                df_combined["Z-Score"] = 0 # Avoid division by zero if spread is constant
+            else:
+                df_combined["Z-Score"] = (df_combined["Spread"] - spread_mean) / spread_std
             
             # Calculate margin
             last_row = df_combined.tail(1)
             last_asset1 = last_row[ticker1].values[0]
             last_asset2 = last_row[ticker2].values[0]
-            target_asset1 = (beta * last_asset2 + intercept) + spread_mean
+            
+            # Target Asset1 price for Z-Score = 0 (Spread = Spread_Mean)
+            # Spread = Asset1 - (Beta * Asset2 + Intercept)
+            # Spread_Mean = Target_Asset1 - (Beta * Asset2 + Intercept)
+            # Target_Asset1 = Spread_Mean + (Beta * Asset2 + Intercept)
+            target_asset1 = spread_mean + (beta * last_asset2 + intercept)
+            
             margin_pct = (target_asset1 / last_asset1 - 1) * 100
             
             # Display results
@@ -191,19 +208,20 @@ Desvio Padrão: {spread_std:.4f}
 
 Z-Score do Spread: {df_combined['Z-Score'].iloc[-1]:.4f}
 
-MARGEM DE MOVIMENTO:
+MARGEM DE MOVIMENTO (para {ticker1} retornar à média):
 {'='*50}
 Preço-Alvo {ticker1}: {target_asset1:.4f}
-Margem de Subida: {margin_pct:.2f}%
+Margem Percentual: {margin_pct:.2f}%
 
 INTERPRETAÇÃO:
 {'='*50}
 """
             
-            if df_combined['Z-Score'].iloc[-1] > 2:
-                results_text += f"{ticker1} está SOBRECOMPRADO em relação a {ticker2}.\nEspera-se queda de {ticker1} ou alta de {ticker2}."
-            elif df_combined['Z-Score'].iloc[-1] < -2:
-                results_text += f"{ticker1} está SOBREVENDIDO em relação a {ticker2}.\nEspera-se alta de {ticker1} ou queda de {ticker2}.\nMargem potencial de subida: {abs(margin_pct):.2f}%"
+            current_zscore = df_combined['Z-Score'].iloc[-1]
+            if current_zscore > 2:
+                results_text += f"{ticker1} está SOBRECOMPRADO em relação a {ticker2}.\nEspera-se queda de {ticker1} ou alta de {ticker2}.\nMargem potencial de queda para {ticker1}: {abs(margin_pct):.2f}%"
+            elif current_zscore < -2:
+                results_text += f"{ticker1} está SOBREVENDIDO em relação a {ticker2}.\nEspera-se alta de {ticker1} ou queda de {ticker2}.\nMargem potencial de subida para {ticker1}: {abs(margin_pct):.2f}%"
             else:
                 results_text += "O spread está próximo da média. Sem sinal claro de entrada."
             
@@ -215,7 +233,7 @@ INTERPRETAÇÃO:
                 "p_value": p_value,
                 "beta": beta,
                 "intercept": intercept,
-                "zscore": df_combined['Z-Score'].iloc[-1],
+                "zscore": current_zscore,
                 "margin_pct": margin_pct
             }
             
@@ -238,9 +256,13 @@ INTERPRETAÇÃO:
         ax.axhline(0, color="black", linestyle="--", alpha=0.5)
         ax.axhline(2, color="red", linestyle="--", alpha=0.5, label="Sobrecomprado (+2)")
         ax.axhline(-2, color="green", linestyle="--", alpha=0.5, label="Sobrevendido (-2)")
-        ax.fill_between(range(len(df)), 2, 10, alpha=0.1, color="red")
-        ax.fill_between(range(len(df)), -10, -2, alpha=0.1, color="green")
         
+        # Preencher áreas de sobrecompra/sobrevenda
+        # Ajustar o range para o fill_between para evitar erros com índices de data
+        x_values = range(len(df))
+        ax.fill_between(x_values, 2, df["Z-Score"].max() * 1.1, where=(df["Z-Score"] > 2).values, color="red", alpha=0.1, interpolate=True)
+        ax.fill_between(x_values, -2, df["Z-Score"].min() * 1.1, where=(df["Z-Score"] < -2).values, color="green", alpha=0.1, interpolate=True)
+
         ax.set_title("Z-Score do Spread")
         ax.set_ylabel("Z-Score")
         ax.legend()
